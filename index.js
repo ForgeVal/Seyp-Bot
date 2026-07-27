@@ -49,14 +49,10 @@ const CONFIG = {
   PAYMENT_SELECT_ID: 'payment_method_select',
 
   // Pricing
-  BASE_PRICE_PHP: 300,
-  PAYPAL_FEE_PERCENT: 5,
+  BASE_PRICE_PHP: 250,
+  PAYPAL_PRICE_PHP: 265,
   PAYPAL_EMAIL: 'saif282005@gmail.com',
 };
-
-CONFIG.PAYPAL_PRICE_PHP = Math.round(
-  CONFIG.BASE_PRICE_PHP * (1 + CONFIG.PAYPAL_FEE_PERCENT / 100)
-);
 
 // ---------------------------------------------------------------------
 // Ticket type definitions - add more entries here for more buttons
@@ -71,7 +67,7 @@ const TICKET_TYPES = {
     topicPrefix: 'pc-optimization-ticket',
     ticketTitle: 'PC Optimization Ticket',
     ticketIntro:
-      `This is a paid service — **₱${CONFIG.BASE_PRICE_PHP}** (PayPal: ₱${CONFIG.PAYPAL_PRICE_PHP}, includes a 5% fee). ` +
+      `This is a paid service — **₱${CONFIG.BASE_PRICE_PHP}** (PayPal: ₱${CONFIG.PAYPAL_PRICE_PHP}, includes a processing fee). ` +
       'Please choose a payment method from the dropdown below, complete payment, ' +
       'then send a screenshot of your payment as proof. Once that\'s done, click ' +
       '**Submit PC Specs** below to fill out your PC details so we can get started.',
@@ -237,7 +233,7 @@ function buildPaymentSelectRow() {
     .addOptions(
       { label: 'GCash', value: 'gcash', description: `₱${CONFIG.BASE_PRICE_PHP}`, emoji: '💙' },
       { label: 'Maya', value: 'maya', description: `₱${CONFIG.BASE_PRICE_PHP}`, emoji: '💚' },
-      { label: 'PayPal', value: 'paypal', description: `₱${CONFIG.PAYPAL_PRICE_PHP} (incl. 5% fee)`, emoji: '💛' }
+      { label: 'PayPal', value: 'paypal', description: `₱${CONFIG.PAYPAL_PRICE_PHP} (incl. fee)`, emoji: '💛' }
     );
 
   return new ActionRowBuilder().addComponents(select);
@@ -360,7 +356,7 @@ client.on('interactionCreate', async (interaction) => {
         const embed = new EmbedBuilder()
           .setTitle('PayPal Payment')
           .setDescription(
-            `Send **₱${CONFIG.PAYPAL_PRICE_PHP}** (includes a ${CONFIG.PAYPAL_FEE_PERCENT}% fee) to:\n` +
+            `Send **₱${CONFIG.PAYPAL_PRICE_PHP}** (includes a small processing fee) to:\n` +
             `**${CONFIG.PAYPAL_EMAIL}**`
           )
           .setColor(0x003087);
