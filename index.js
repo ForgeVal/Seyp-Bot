@@ -21,10 +21,16 @@ const {
   ButtonBuilder,
   ButtonStyle,
   EmbedBuilder,
+  ModalBuilder,
+  TextInputBuilder,
+  TextInputStyle,
+  StringSelectMenuBuilder,
+  AttachmentBuilder,
   REST,
   Routes,
 } = require('discord.js');
 
+const fs = require('fs');
 require('dotenv').config();
 
 // ---------------------------------------------------------------------
@@ -38,7 +44,19 @@ const CONFIG = {
   ADMIN_ROLE_ID: process.env.ADMIN_ROLE_ID,
 
   CLOSE_BUTTON_ID: 'close_ticket',
+  SPECS_BUTTON_ID: 'submit_pc_specs',
+  SPECS_MODAL_ID: 'pc_specs_modal',
+  PAYMENT_SELECT_ID: 'payment_method_select',
+
+  // Pricing
+  BASE_PRICE_PHP: 300,
+  PAYPAL_FEE_PERCENT: 5,
+  PAYPAL_EMAIL: 'saif282005@gmail.com',
 };
+
+CONFIG.PAYPAL_PRICE_PHP = Math.round(
+  CONFIG.BASE_PRICE_PHP * (1 + CONFIG.PAYPAL_FEE_PERCENT / 100)
+);
 
 // ---------------------------------------------------------------------
 // Ticket type definitions - add more entries here for more buttons
@@ -53,8 +71,12 @@ const TICKET_TYPES = {
     topicPrefix: 'pc-optimization-ticket',
     ticketTitle: 'PC Optimization Ticket',
     ticketIntro:
-      'Please describe your PC specs and the issue you\'re running into, ' +
-      'and an admin will be with you shortly.',
+      `This is a paid service — **₱${CONFIG.BASE_PRICE_PHP}** (PayPal: ₱${CONFIG.PAYPAL_PRICE_PHP}, includes a 5% fee). ` +
+      'Please choose a payment method from the dropdown below, complete payment, ' +
+      'then send a screenshot of your payment as proof. Once that\'s done, click ' +
+      '**Submit PC Specs** below to fill out your PC details so we can get started.',
+    specsForm: true,
+    paymentRequired: true,
   },
   other_pc_services: {
     buttonId: 'open_other_pc_services_ticket',
@@ -167,13 +189,29 @@ async function createTicketChannel(guild, member, type) {
     permissionOverwrites: overwrites,
   });
 
-  const closeRow = new ActionRowBuilder().addComponents(
+  const actionButtons = [
     new ButtonBuilder()
       .setCustomId(CONFIG.CLOSE_BUTTON_ID)
       .setLabel('Close Ticket')
       .setEmoji('🔒')
-      .setStyle(ButtonStyle.Danger)
-  );
+      .setStyle(ButtonStyle.Danger),
+  ];
+
+  if (type.specsForm) {
+    actionButtons.unshift(
+      new ButtonBuilder()
+        .setCustomId(CONFIG.SPECS_BUTTON_ID)
+        .setLabel('Submit PC Specs')
+        .setEmoji('📝')
+        .setStyle(ButtonStyle.Success)
+    );
+  }
+
+  const actionRow = new ActionRowBuilder().addComponents(...actionButtons);
+
+  const components = type.paymentRequired
+    ? [buildPaymentSelectRow(), actionRow]
+    : [actionRow];
 
   const introEmbed = new EmbedBuilder()
     .setTitle(type.ticketTitle)
@@ -183,10 +221,57 @@ async function createTicketChannel(guild, member, type) {
   await channel.send({
     content: CONFIG.ADMIN_ROLE_ID ? `<@&${CONFIG.ADMIN_ROLE_ID}>` : undefined,
     embeds: [introEmbed],
-    components: [closeRow],
+    components,
   });
 
   return channel;
+}
+
+// ---------------------------------------------------------------------
+// Helper: build the payment method dropdown
+// ---------------------------------------------------------------------
+function buildPaymentSelectRow() {
+  const select = new StringSelectMenuBuilder()
+    .setCustomId(CONFIG.PAYMENT_SELECT_ID)
+    .setPlaceholder('Choose a payment method')
+    .addOptions(
+      { label: 'GCash', value: 'gcash', description: `₱${CONFIG.BASE_PRICE_PHP}`, emoji: '💙' },
+      { label: 'Maya', value: 'maya', description: `₱${CONFIG.BASE_PRICE_PHP}`, emoji: '💚' },
+      { label: 'PayPal', value: 'paypal', description: `₱${CONFIG.PAYPAL_PRICE_PHP} (incl. 5% fee)`, emoji: '💛' }
+    );
+
+  return new ActionRowBuilder().addComponents(select);
+}
+
+// ---------------------------------------------------------------------
+// Helper: build the PC specs modal (max 5 fields per Discord modal, so
+// closely related items are paired up)
+// ---------------------------------------------------------------------
+function buildSpecsModal() {
+  const modal = new ModalBuilder()
+    .setCustomId(CONFIG.SPECS_MODAL_ID)
+    .setTitle('PC Specs Form');
+
+  const fields = [
+    { id: 'processor', label: 'Processor (Intel / AMD)', style: TextInputStyle.Short },
+    { id: 'gpu', label: 'GPU (NVIDIA / AMD)', style: TextInputStyle.Short },
+    { id: 'ram_motherboard', label: 'RAM (8GB/16GB) & Motherboard', style: TextInputStyle.Short },
+    { id: 'os_refresh', label: 'OS (Win 10/11) & Monitor Refresh Rate', style: TextInputStyle.Short },
+    { id: 'problem', label: 'PC Problem', style: TextInputStyle.Paragraph },
+  ];
+
+  const rows = fields.map((f) =>
+    new ActionRowBuilder().addComponents(
+      new TextInputBuilder()
+        .setCustomId(f.id)
+        .setLabel(f.label)
+        .setStyle(f.style)
+        .setRequired(true)
+    )
+  );
+
+  modal.addComponents(...rows);
+  return modal;
 }
 
 // ---------------------------------------------------------------------
@@ -226,6 +311,87 @@ client.on('interactionCreate', async (interaction) => {
         }, 5000);
         return;
       }
+
+      // Submit PC Specs button -> open the modal form
+      if (interaction.customId === CONFIG.SPECS_BUTTON_ID) {
+        await interaction.showModal(buildSpecsModal());
+        return;
+      }
+    }
+
+    // Payment method dropdown selected
+    if (interaction.isStringSelectMenu() && interaction.customId === CONFIG.PAYMENT_SELECT_ID) {
+      const choice = interaction.values[0];
+
+      if (choice === 'gcash') {
+        const attachment = new AttachmentBuilder('./assets/gcash-qr.png', { name: 'gcash-qr.png' });
+        const embed = new EmbedBuilder()
+          .setTitle('GCash Payment')
+          .setDescription(`Amount: **₱${CONFIG.BASE_PRICE_PHP}**\nScan the QR code below to pay.`)
+          .setImage('attachment://gcash-qr.png')
+          .setColor(0x0072ce);
+        await interaction.reply({ embeds: [embed], files: [attachment], ephemeral: true });
+        return;
+      }
+
+      if (choice === 'maya') {
+        const embed = new EmbedBuilder()
+          .setTitle('Maya Payment')
+          .setColor(0x00b140);
+
+        const mayaQrExists = fs.existsSync('./assets/maya-qr.png');
+        if (mayaQrExists) {
+          const attachment = new AttachmentBuilder('./assets/maya-qr.png', { name: 'maya-qr.png' });
+          embed
+            .setDescription(`Amount: **₱${CONFIG.BASE_PRICE_PHP}**\nScan the QR code below to pay.`)
+            .setImage('attachment://maya-qr.png');
+          await interaction.reply({ embeds: [embed], files: [attachment], ephemeral: true });
+        } else {
+          embed.setDescription(
+            `Amount: **₱${CONFIG.BASE_PRICE_PHP}**\n` +
+            'Maya QR is not set up yet — please contact an admin for payment details.'
+          );
+          await interaction.reply({ embeds: [embed], ephemeral: true });
+        }
+        return;
+      }
+
+      if (choice === 'paypal') {
+        const embed = new EmbedBuilder()
+          .setTitle('PayPal Payment')
+          .setDescription(
+            `Send **₱${CONFIG.PAYPAL_PRICE_PHP}** (includes a ${CONFIG.PAYPAL_FEE_PERCENT}% fee) to:\n` +
+            `**${CONFIG.PAYPAL_EMAIL}**`
+          )
+          .setColor(0x003087);
+        await interaction.reply({ embeds: [embed], ephemeral: true });
+        return;
+      }
+    }
+
+    // PC specs modal submitted
+    if (interaction.isModalSubmit() && interaction.customId === CONFIG.SPECS_MODAL_ID) {
+      const processor = interaction.fields.getTextInputValue('processor');
+      const gpu = interaction.fields.getTextInputValue('gpu');
+      const ramMobo = interaction.fields.getTextInputValue('ram_motherboard');
+      const osRefresh = interaction.fields.getTextInputValue('os_refresh');
+      const problem = interaction.fields.getTextInputValue('problem');
+
+      const specsEmbed = new EmbedBuilder()
+        .setTitle('PC Specs Submitted')
+        .setColor(0x5865f2)
+        .addFields(
+          { name: 'Processor', value: processor },
+          { name: 'GPU', value: gpu },
+          { name: 'RAM & Motherboard', value: ramMobo },
+          { name: 'OS & Monitor Refresh Rate', value: osRefresh },
+          { name: 'PC Problem', value: problem }
+        )
+        .setFooter({ text: `Submitted by ${interaction.user.tag}` })
+        .setTimestamp();
+
+      await interaction.reply({ embeds: [specsEmbed] });
+      return;
     }
   } catch (err) {
     console.error('Interaction error:', err);
