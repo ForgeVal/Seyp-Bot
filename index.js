@@ -1,10 +1,11 @@
 // PC Optimization Ticket Bot
 // -----------------------------------------------------------------------
 // Features:
-//   /setup            -> posts an embed with a "PC Optimization" button
-//   Button click       -> creates a private ticket channel (creator + admin
-//                         role only), with a "Close Ticket" button inside
-//   Close button        -> archives/deletes the ticket channel
+//   /setup             -> posts an embed with two buttons:
+//                          "PC Optimization" and "Other PC Services"
+//   Button click        -> creates a private ticket channel (creator + admin
+//                          role only), with a "Close Ticket" button inside
+//   Close button         -> deletes the ticket channel after a short delay
 //
 // Requires: discord.js v14, Node 18+
 // -----------------------------------------------------------------------
@@ -36,9 +37,37 @@ const CONFIG = {
   // Role ID that should be able to see every ticket (your support/admin role)
   ADMIN_ROLE_ID: process.env.ADMIN_ROLE_ID,
 
-  // Custom IDs used internally - no need to change
-  OPEN_BUTTON_ID: 'open_pc_optimization_ticket',
-  CLOSE_BUTTON_ID: 'close_pc_optimization_ticket',
+  CLOSE_BUTTON_ID: 'close_ticket',
+};
+
+// ---------------------------------------------------------------------
+// Ticket type definitions - add more entries here for more buttons
+// ---------------------------------------------------------------------
+const TICKET_TYPES = {
+  pc_optimization: {
+    buttonId: 'open_pc_optimization_ticket',
+    buttonLabel: 'PC Optimization',
+    buttonEmoji: '🛠️',
+    buttonStyle: ButtonStyle.Primary,
+    channelPrefix: 'pc-optim',
+    topicPrefix: 'pc-optimization-ticket',
+    ticketTitle: 'PC Optimization Ticket',
+    ticketIntro:
+      'Please describe your PC specs and the issue you\'re running into, ' +
+      'and an admin will be with you shortly.',
+  },
+  other_pc_services: {
+    buttonId: 'open_other_pc_services_ticket',
+    buttonLabel: 'Other PC Services',
+    buttonEmoji: '🖥️',
+    buttonStyle: ButtonStyle.Secondary,
+    channelPrefix: 'pc-other',
+    topicPrefix: 'other-pc-services-ticket',
+    ticketTitle: 'Other PC Services Ticket',
+    ticketIntro:
+      'Please describe what you need help with, and an admin will be ' +
+      'with you shortly.',
+  },
 };
 
 const client = new Client({
@@ -48,12 +77,12 @@ const client = new Client({
 
 // ---------------------------------------------------------------------
 // Slash command: /setup
-// Posts the embed + button in whatever channel it's run in.
+// Posts the embed + buttons in whatever channel it's run in.
 // ---------------------------------------------------------------------
 const commands = [
   new SlashCommandBuilder()
     .setName('setup')
-    .setDescription('Post the PC Optimization ticket button in this channel')
+    .setDescription('Post the PC support ticket buttons in this channel')
     .setDefaultMemberPermissions(PermissionFlagsBits.ManageChannels)
     .toJSON(),
 ];
@@ -68,35 +97,37 @@ async function registerCommands() {
 }
 
 // ---------------------------------------------------------------------
-// Helper: build the initial embed + button message
+// Helper: build the initial embed + buttons message
 // ---------------------------------------------------------------------
 function buildTicketPromptMessage() {
   const embed = new EmbedBuilder()
-    .setTitle('PC Optimization Support')
+    .setTitle('PC Support')
     .setDescription(
-      'Need help optimizing your PC? Click the button below to open a ' +
-      'private ticket. Only you and our admins will be able to see it.'
+      'Need help with your PC? Click a button below to open a private ' +
+      'ticket. Only you and our admins will be able to see it.'
     )
     .setColor(0x5865f2);
 
   const row = new ActionRowBuilder().addComponents(
-    new ButtonBuilder()
-      .setCustomId(CONFIG.OPEN_BUTTON_ID)
-      .setLabel('PC Optimization')
-      .setEmoji('🛠️')
-      .setStyle(ButtonStyle.Primary)
+    ...Object.values(TICKET_TYPES).map((type) =>
+      new ButtonBuilder()
+        .setCustomId(type.buttonId)
+        .setLabel(type.buttonLabel)
+        .setEmoji(type.buttonEmoji)
+        .setStyle(type.buttonStyle)
+    )
   );
 
   return { embeds: [embed], components: [row] };
 }
 
 // ---------------------------------------------------------------------
-// Helper: create a private ticket channel for a given user
+// Helper: create a private ticket channel for a given user + ticket type
 // ---------------------------------------------------------------------
-async function createTicketChannel(guild, member) {
-  // Avoid duplicate open tickets for the same user
+async function createTicketChannel(guild, member, type) {
+  // Avoid duplicate open tickets of this type for the same user
   const existing = guild.channels.cache.find(
-    (c) => c.topic === `pc-optimization-ticket:${member.id}`
+    (c) => c.topic === `${type.topicPrefix}:${member.id}`
   );
   if (existing) return existing;
 
@@ -129,10 +160,10 @@ async function createTicketChannel(guild, member) {
   }
 
   const channel = await guild.channels.create({
-    name: `pc-optim-${member.user.username}`.toLowerCase().slice(0, 90),
+    name: `${type.channelPrefix}-${member.user.username}`.toLowerCase().slice(0, 90),
     type: ChannelType.GuildText,
     parent: CONFIG.TICKET_CATEGORY_ID || undefined,
-    topic: `pc-optimization-ticket:${member.id}`,
+    topic: `${type.topicPrefix}:${member.id}`,
     permissionOverwrites: overwrites,
   });
 
@@ -145,12 +176,8 @@ async function createTicketChannel(guild, member) {
   );
 
   const introEmbed = new EmbedBuilder()
-    .setTitle('PC Optimization Ticket')
-    .setDescription(
-      `Hi <@${member.id}>, thanks for opening a ticket! ` +
-      'Please describe your PC specs and the issue you\'re running into, ' +
-      'and an admin will be with you shortly.'
-    )
+    .setTitle(type.ticketTitle)
+    .setDescription(`Hi <@${member.id}>, thanks for opening a ticket! ${type.ticketIntro}`)
     .setColor(0x57f287);
 
   await channel.send({
@@ -177,23 +204,28 @@ client.on('interactionCreate', async (interaction) => {
       return;
     }
 
-    // Open ticket button
-    if (interaction.isButton() && interaction.customId === CONFIG.OPEN_BUTTON_ID) {
-      await interaction.deferReply({ ephemeral: true });
-      const channel = await createTicketChannel(interaction.guild, interaction.member);
-      await interaction.editReply({
-        content: `Your ticket has been created: ${channel}`,
-      });
-      return;
-    }
+    // Open ticket buttons (any type)
+    if (interaction.isButton()) {
+      const type = Object.values(TICKET_TYPES).find(
+        (t) => t.buttonId === interaction.customId
+      );
+      if (type) {
+        await interaction.deferReply({ ephemeral: true });
+        const channel = await createTicketChannel(interaction.guild, interaction.member, type);
+        await interaction.editReply({
+          content: `Your ticket has been created: ${channel}`,
+        });
+        return;
+      }
 
-    // Close ticket button
-    if (interaction.isButton() && interaction.customId === CONFIG.CLOSE_BUTTON_ID) {
-      await interaction.reply('Closing this ticket in 5 seconds...');
-      setTimeout(() => {
-        interaction.channel.delete().catch(() => {});
-      }, 5000);
-      return;
+      // Close ticket button
+      if (interaction.customId === CONFIG.CLOSE_BUTTON_ID) {
+        await interaction.reply('Closing this ticket in 5 seconds...');
+        setTimeout(() => {
+          interaction.channel.delete().catch(() => {});
+        }, 5000);
+        return;
+      }
     }
   } catch (err) {
     console.error('Interaction error:', err);
