@@ -1,0 +1,14 @@
+{
+  "name": "pc-optimization-ticket-bot",
+  "version": "1.0.0",
+  "description": "Discord bot that creates private PC Optimization support tickets via a button.",
+  "main": "index.js",
+  "type": "commonjs",
+  "scripts": {
+    "start": "node index.js"
+  },
+  "dependencies": {
+    "discord.js": "^14.15.3",
+    "dotenv": "^16.4.5"
+  }
+}
