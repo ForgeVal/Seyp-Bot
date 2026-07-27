@@ -281,7 +281,8 @@ client.on('interactionCreate', async (interaction) => {
   try {
     // /setup command
     if (interaction.isChatInputCommand() && interaction.commandName === 'setup') {
-      await interaction.reply(buildTicketPromptMessage());
+      await interaction.channel.send(buildTicketPromptMessage());
+      await interaction.reply({ content: 'Ticket panel posted.', ephemeral: true });
       return;
     }
 
