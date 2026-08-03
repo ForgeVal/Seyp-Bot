@@ -389,7 +389,16 @@ client.on('interactionCreate', async (interaction) => {
         .setFooter({ text: `Submitted by ${interaction.user.tag}` })
         .setTimestamp();
 
-      await interaction.reply({ embeds: [specsEmbed] });
+      const anydeskEmbed = new EmbedBuilder()
+        .setTitle('Next Step: Remote Access')
+        .setDescription(
+          'To get started, download AnyDesk here: **[anydesk.com/en/downloads](https://anydesk.com/en/downloads)**\n\n' +
+          'Once it\'s installed and open, send us the 9-digit AnyDesk address ' +
+          'shown on your screen so we can connect.'
+        )
+        .setColor(0xef4a44);
+
+      await interaction.reply({ embeds: [specsEmbed, anydeskEmbed] });
       return;
     }
   } catch (err) {
