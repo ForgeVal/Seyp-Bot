@@ -122,7 +122,7 @@ function buildTicketPromptMessage() {
     .setTitle('PC Support')
     .setDescription(
       'Need help with your PC? Click a button below to open a private ' +
-      'ticket. Only you and our admins will be able to see it.'
+      'ticket. Only you and @Seyp will be able to see it.'
     )
     .setColor(0x5865f2);
 
