@@ -214,8 +214,10 @@ async function createTicketChannel(guild, member, type) {
     .setDescription(`Hi <@${member.id}>, thanks for opening a ticket! ${type.ticketIntro}`)
     .setColor(0x57f287);
 
+  // NOTE: previously this pinged CONFIG.ADMIN_ROLE_ID (the "@Intern" role)
+  // in the `content` field every time a ticket was created. That ping has
+  // been removed below — the message now sends with no role mention.
   await channel.send({
-    content: CONFIG.ADMIN_ROLE_ID ? `<@&${CONFIG.ADMIN_ROLE_ID}>` : undefined,
     embeds: [introEmbed],
     components,
   });
